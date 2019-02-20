@@ -5,6 +5,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -44,6 +46,19 @@ func main() {
 	os.Setenv("AWS_ACCESS_KEY_ID", request.Source.AWSAccessKeyID)
 	os.Setenv("AWS_SECRET_ACCESS_KEY", request.Source.AWSSecretAccessKey)
 	os.Setenv("AWS_SESSION_TOKEN", request.Source.AWSSessionToken)
+
+	// Custom code to handle roleArn
+	if request.Source.AWSRoleArn != "" {
+		sess := session.Must(session.NewSession())
+		creds := stscreds.NewCredentials(sess, request.Source.AWSRoleArn)
+		val, err := creds.Get()
+		fatalIf("failed to assume role", err)
+
+		os.Setenv("AWS_ACCESS_KEY_ID", val.AccessKeyID)
+		os.Setenv("AWS_SECRET_ACCESS_KEY", val.SecretAccessKey)
+		os.Setenv("AWS_SESSION_TOKEN", val.SessionToken)
+	}
+
 
 	// silence benign ecr-login errors/warnings
 	seelog.UseLogger(seelog.Disabled)
