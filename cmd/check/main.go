@@ -5,8 +5,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -15,6 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/session"
 
 	"github.com/cihub/seelog"
 	"github.com/pivotal-golang/lager"
@@ -27,10 +28,10 @@ import (
 	_ "github.com/docker/distribution/manifest/schema1"
 	_ "github.com/docker/distribution/manifest/schema2"
 	"github.com/docker/distribution/reference"
-	"github.com/docker/distribution/registry/api/v2"
+	v2 "github.com/docker/distribution/registry/api/v2"
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/transport"
-	"github.com/hashicorp/go-multierror"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/pivotal-golang/clock"
 )
 
@@ -43,27 +44,27 @@ func main() {
 	err = json.NewDecoder(os.Stdin).Decode(&request)
 	fatalIf("failed to read request", err)
 
-	os.Setenv("AWS_ACCESS_KEY_ID", request.Source.AWSAccessKeyID)
-	os.Setenv("AWS_SECRET_ACCESS_KEY", request.Source.AWSSecretAccessKey)
-	os.Setenv("AWS_SESSION_TOKEN", request.Source.AWSSessionToken)
-
-	// Custom code to handle roleArn
-	if request.Source.AWSRoleArn != "" {
-		sess := session.Must(session.NewSession())
-		creds := stscreds.NewCredentials(sess, request.Source.AWSRoleArn)
-		val, err := creds.Get()
-		fatalIf("failed to assume role", err)
-
-		os.Setenv("AWS_ACCESS_KEY_ID", val.AccessKeyID)
-		os.Setenv("AWS_SECRET_ACCESS_KEY", val.SecretAccessKey)
-		os.Setenv("AWS_SESSION_TOKEN", val.SessionToken)
-	}
-
-
 	// silence benign ecr-login errors/warnings
 	seelog.UseLogger(seelog.Disabled)
 
 	if rECRRepo.MatchString(request.Source.Repository) == true {
+
+		// Custom code to handle roleArn
+		if request.Source.AWSRoleArn != "" {
+			sess := session.Must(session.NewSession())
+			creds := stscreds.NewCredentials(sess, request.Source.AWSRoleArn)
+			val, err := creds.Get()
+			fatalIf("failed to assume role", err)
+
+			os.Setenv("AWS_ACCESS_KEY_ID", val.AccessKeyID)
+			os.Setenv("AWS_SECRET_ACCESS_KEY", val.SecretAccessKey)
+			os.Setenv("AWS_SESSION_TOKEN", val.SessionToken)
+		} else {
+			os.Setenv("AWS_ACCESS_KEY_ID", request.Source.AWSAccessKeyID)
+			os.Setenv("AWS_SECRET_ACCESS_KEY", request.Source.AWSSecretAccessKey)
+			os.Setenv("AWS_SESSION_TOKEN", request.Source.AWSSessionToken)
+		}
+
 		ecrUser, ecrPass, err := ecr.ECRHelper{
 			ClientFactory: ecrapi.DefaultClientFactory{},
 		}.Get(request.Source.Repository)
